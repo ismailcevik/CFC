@@ -1,7 +1,6 @@
 import {
   BaseEdge,
   EdgeLabelRenderer,
-  Position,
   getSmoothStepPath,
   useStore,
   type ConnectionLineComponentProps,
@@ -9,39 +8,65 @@ import {
   type InternalNode,
 } from '@xyflow/react'
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
+import { CFC_HOP_PIN_SNAP } from './cfc'
+import { stepPoints, type Pt } from './placement'
 import { portKindOf } from './ports'
 import type { AppEdge, AppNode, PortKind } from './types'
 
 const HOP = 7
 const MIN_GAP = 12
-
-type Pt = { x: number; y: number }
+const LANE_GAP = 12
 
 type HoverNet = {
   edgeId: string | null
   sourceId: string | null
-  set: (edgeId: string | null, sourceId: string | null) => void
+  targetId: string | null
+  sourceHandle: string | null
+  targetHandle: string | null
+  set: (
+    edgeId: string | null,
+    sourceId?: string | null,
+    targetId?: string | null,
+    sourceHandle?: string | null,
+    targetHandle?: string | null,
+  ) => void
 }
 
 const HoverNetContext = createContext<HoverNet>({
   edgeId: null,
   sourceId: null,
+  targetId: null,
+  sourceHandle: null,
+  targetHandle: null,
   set: () => undefined,
 })
+
+export function useWireTrace() {
+  return useContext(HoverNetContext)
+}
 
 export function EdgeHoverProvider({ children }: { children: ReactNode }) {
   const [edgeId, setEdgeId] = useState<string | null>(null)
   const [sourceId, setSourceId] = useState<string | null>(null)
+  const [targetId, setTargetId] = useState<string | null>(null)
+  const [sourceHandle, setSourceHandle] = useState<string | null>(null)
+  const [targetHandle, setTargetHandle] = useState<string | null>(null)
   const value = useMemo<HoverNet>(
     () => ({
       edgeId,
       sourceId,
-      set: (nextEdge, nextSource) => {
+      targetId,
+      sourceHandle,
+      targetHandle,
+      set: (nextEdge, nextSource = null, nextTarget = null, nextSourceHandle = null, nextTargetHandle = null) => {
         setEdgeId(nextEdge)
         setSourceId(nextSource)
+        setTargetId(nextTarget)
+        setSourceHandle(nextSourceHandle)
+        setTargetHandle(nextTargetHandle)
       },
     }),
-    [edgeId, sourceId],
+    [edgeId, sourceHandle, sourceId, targetHandle, targetId],
   )
   return <HoverNetContext.Provider value={value}>{children}</HoverNetContext.Provider>
 }
@@ -97,8 +122,6 @@ function CfcEdge({
   sourceY,
   targetX,
   targetY,
-  sourcePosition,
-  targetPosition,
   sourceHandleId,
   targetHandleId,
   selected,
@@ -107,30 +130,62 @@ function CfcEdge({
   const hover = useContext(HoverNetContext)
   const kind = portKindOf(sourceHandleId) ?? portKindOf(targetHandleId)
   const color = kind ? KIND_COLOR[kind] : '#4a5d70'
-  const points = stepPoints(sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition)
-  const crossings = useStore((state) => collectHops(id, points, state.edges, state.nodeLookup))
+  const points = useStore((state) => {
+    const src = state.nodeLookup.get(source)
+    const tgt = state.nodeLookup.get(target)
+    if (isHopIncoming(src, tgt, sourceHandleId)) {
+      const end = handleCenter(tgt!, targetHandleId, 'target')
+      const tx = (Number.isFinite(end.x) ? end.x : targetX) + CFC_HOP_PIN_SNAP
+      const ty = Number.isFinite(end.y) ? end.y : targetY
+      const start = hopPanelHandlePoint(src!, sourceHandleId, 'source', sourceX, sourceY)
+      return hopInPoints(start.x, start.y, tx, ty)
+    }
+    if (isHopOutgoing(src, tgt, targetHandleId)) {
+      const start = handleCenter(src!, sourceHandleId, 'source')
+      const end = hopPanelHandlePoint(tgt!, targetHandleId, 'target', targetX, targetY)
+      const sx = Number.isFinite(start.x) ? start.x : sourceX
+      const sy = Number.isFinite(start.y) ? start.y : sourceY
+      return hopOutPoints(sx, sy, end.x, end.y)
+    }
+    return routePoints(
+      id,
+      sourceX,
+      sourceY,
+      targetX,
+      targetY,
+      src?.type,
+      tgt?.type,
+      storeEdges(state),
+      state.nodeLookup,
+    )
+  })
+  const crossings = useStore((state) =>
+    id.startsWith('hop-e-') ? [] : collectHops(id, points, storeEdges(state), state.nodeLookup),
+  )
   const traced = useStore((state) => {
     const src = state.nodeLookup.get(source)
     const tgt = state.nodeLookup.get(target)
     return Boolean(src?.selected || tgt?.selected)
   })
   const related = hover.sourceId === source && hover.edgeId !== id
-  const active = selected || traced || hover.edgeId === id || related
+  const hovered = hover.edgeId === id
+  const dimmed = Boolean(hover.edgeId && hover.edgeId !== id)
+  const active = selected || traced || hovered || related
   const path = pathWithHops(points, crossings)
   const labels = useStore((state) => {
     const src = state.nodeLookup.get(source) as InternalNode<AppNode> | undefined
     const tgt = state.nodeLookup.get(target) as InternalNode<AppNode> | undefined
     return {
-      source: src?.data.label ?? source,
-      target: tgt?.data.label ?? target,
+      source: nodeTitle(src),
+      target: nodeTitle(tgt),
     }
   })
 
   return (
     <g
-      className={`cfc-wire kind-${kind ?? 'signal'}${active ? ' is-active' : ''}`}
-      onPointerEnter={() => hover.set(id, source)}
-      onPointerLeave={() => hover.set(null, null)}
+      className={`cfc-wire kind-${kind ?? 'signal'}${active ? ' is-active' : ''}${dimmed ? ' is-dim' : ''}`}
+      onPointerEnter={() => hover.set(id, source, target, sourceHandleId, targetHandleId)}
+      onPointerLeave={() => hover.set(null)}
     >
       <BaseEdge
         id={id}
@@ -138,11 +193,11 @@ function CfcEdge({
         style={{
           ...style,
           stroke: color,
-          strokeWidth: active ? 2.4 : 1.6,
+          strokeWidth: hovered ? 3.2 : active ? 2.4 : 1.6,
         }}
-        interactionWidth={18}
+        interactionWidth={22}
       />
-      {dots(points, color, active)}
+      {dots(points, color, active || hovered)}
       {crossings.map((hop, index) => (
         <circle
           key={`${hop.x}-${hop.y}-${index}`}
@@ -153,16 +208,36 @@ function CfcEdge({
           fill={color}
         />
       ))}
-      {hover.edgeId === id ? (
+      {hovered ? (
         <EdgeLabelRenderer>
+          <div
+            className="cfc-wire-badge is-out"
+            style={{
+              transform: `translate(10px, -120%) translate(${sourceX}px, ${sourceY}px)`,
+              borderColor: color,
+            }}
+          >
+            <small>ÇIKIŞ</small>
+            {labels.source}
+          </div>
           <div
             className="cfc-wire-label"
             style={{
-              transform: `translate(-50%, -140%) translate(${(sourceX + targetX) / 2}px, ${(sourceY + targetY) / 2}px)`,
+              transform: `translate(-50%, -160%) translate(${(sourceX + targetX) / 2}px, ${(sourceY + targetY) / 2}px)`,
               borderColor: color,
             }}
           >
             {labels.source} → {labels.target}
+          </div>
+          <div
+            className="cfc-wire-badge is-in"
+            style={{
+              transform: `translate(calc(-100% - 10px), -120%) translate(${targetX}px, ${targetY}px)`,
+              borderColor: color,
+            }}
+          >
+            <small>GİRİŞ</small>
+            {labels.target}
           </div>
         </EdgeLabelRenderer>
       ) : null}
@@ -170,39 +245,13 @@ function CfcEdge({
   )
 }
 
-function stepPoints(
-  sourceX: number,
-  sourceY: number,
-  _sourcePosition: EdgeProps['sourcePosition'],
-  targetX: number,
-  targetY: number,
-  _targetPosition: EdgeProps['targetPosition'],
-): Pt[] {
-  const offset = 18
-  if (Math.abs(sourceY - targetY) < 0.6) {
-    return [
-      { x: sourceX, y: sourceY },
-      { x: targetX, y: targetY },
-    ]
+function nodeTitle(node?: InternalNode<AppNode>) {
+  if (!node) return ''
+  const label = node.data.label
+  if ((node.type === 'sheetIn' || node.type === 'sheetOut') && node.data.busName) {
+    return `${label} · s.${node.data.busName}`
   }
-  if (sourceX + offset < targetX - offset) {
-    const midX = Math.round((sourceX + targetX) / 2)
-    return [
-      { x: sourceX, y: sourceY },
-      { x: midX, y: sourceY },
-      { x: midX, y: targetY },
-      { x: targetX, y: targetY },
-    ]
-  }
-  const midY = Math.round((sourceY + targetY) / 2)
-  return [
-    { x: sourceX, y: sourceY },
-    { x: sourceX + offset, y: sourceY },
-    { x: sourceX + offset, y: midY },
-    { x: targetX - offset, y: midY },
-    { x: targetX - offset, y: targetY },
-    { x: targetX, y: targetY },
-  ]
+  return label
 }
 
 function collectHops(
@@ -220,7 +269,7 @@ function collectHops(
     if (!src || !tgt) continue
     const start = handleCenter(src, edge.sourceHandle, 'source')
     const end = handleCenter(tgt, edge.targetHandle, 'target')
-    const other = stepPoints(start.x, start.y, Position.Right, end.x, end.y, Position.Left)
+    const other = routePoints(edge.id, start.x, start.y, end.x, end.y, src.type, tgt.type, edges, nodeLookup)
     for (const hop of crossings(points, other)) {
       const key = `${hop.x.toFixed(1)}:${hop.y.toFixed(1)}`
       if (seen.has(key)) continue
@@ -229,6 +278,130 @@ function collectHops(
     }
   }
   return hops
+}
+
+function storeEdges(state: {
+  edges?: { id: string; source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }[]
+  edgeLookup?: Map<string, { id: string; source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }>
+}) {
+  if (state.edgeLookup && state.edgeLookup.size > 0) return [...state.edgeLookup.values()]
+  return Array.isArray(state.edges) ? state.edges : []
+}
+
+function isHopIncoming(
+  src: InternalNode | undefined,
+  tgt: InternalNode | undefined,
+  sourceHandleId?: string | null,
+) {
+  return (
+    src?.type === 'hopPanel' &&
+    tgt != null &&
+    tgt.type !== 'hopPanel' &&
+    Boolean(sourceHandleId?.startsWith('hop-'))
+  )
+}
+
+function isHopOutgoing(
+  src: InternalNode | undefined,
+  tgt: InternalNode | undefined,
+  targetHandleId?: string | null,
+) {
+  return (
+    src != null &&
+    src.type !== 'hopPanel' &&
+    tgt?.type === 'hopPanel' &&
+    Boolean(targetHandleId?.startsWith('hop-'))
+  )
+}
+
+function hopWirePoints(sourceX: number, sourceY: number, targetX: number, targetY: number): Pt[] {
+  const dy = Math.abs(sourceY - targetY)
+  if (dy < 3 && sourceX + 4 < targetX) {
+    return [
+      { x: sourceX, y: targetY },
+      { x: targetX, y: targetY },
+    ]
+  }
+  if (sourceX + 18 < targetX - 18) {
+    const midX = Math.round((sourceX + targetX) / 2)
+    return [
+      { x: sourceX, y: sourceY },
+      { x: midX, y: sourceY },
+      { x: midX, y: targetY },
+      { x: targetX, y: targetY },
+    ]
+  }
+  return stepPoints(sourceX, sourceY, targetX, targetY)
+}
+
+function hopInPoints(sourceX: number, sourceY: number, targetX: number, targetY: number): Pt[] {
+  return hopWirePoints(sourceX, sourceY, targetX, targetY)
+}
+
+function hopOutPoints(sourceX: number, sourceY: number, targetX: number, targetY: number): Pt[] {
+  return hopWirePoints(sourceX, sourceY, targetX, targetY)
+}
+
+function routePoints(
+  id: string,
+  sourceX: number,
+  sourceY: number,
+  targetX: number,
+  targetY: number,
+  sourceType: string | undefined,
+  targetType: string | undefined,
+  edges: { id: string; source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }[],
+  nodeLookup: Map<string, InternalNode>,
+) {
+  const base = sheetLane(sourceX, targetX, sourceType, targetType)
+  const forward = sourceX + 18 < targetX - 18
+  const key = corridorKey(sourceX, targetX, sourceType, targetType)
+  const pack: { id: string; y: number }[] = []
+  const list = Array.isArray(edges) ? edges : []
+  for (const edge of list) {
+    const src = nodeLookup.get(edge.source)
+    const tgt = nodeLookup.get(edge.target)
+    if (!src || !tgt) continue
+    const start = handleCenter(src, edge.sourceHandle, 'source')
+    const end = handleCenter(tgt, edge.targetHandle, 'target')
+    if (corridorKey(start.x, end.x, src.type, tgt.type) !== key) continue
+    pack.push({ id: edge.id, y: (start.y + end.y) / 2 })
+  }
+  if (!pack.some((item) => item.id === id)) {
+    pack.push({ id, y: (sourceY + targetY) / 2 })
+  }
+  pack.sort((a, b) => a.y - b.y || a.id.localeCompare(b.id))
+  const index = Math.max(0, pack.findIndex((item) => item.id === id))
+  const shift = (index - Math.max(pack.length - 1, 0) / 2) * LANE_GAP
+  if (forward) return stepPoints(sourceX, sourceY, targetX, targetY, (base ?? Math.round((sourceX + targetX) / 2)) + shift)
+  return stepPoints(sourceX, sourceY, targetX, targetY, base, shift)
+}
+
+function corridorKey(
+  sourceX: number,
+  targetX: number,
+  sourceType?: string,
+  targetType?: string,
+) {
+  const sourceSheet = sourceType === 'sheetIn' || sourceType === 'sheetOut'
+  const targetSheet = targetType === 'sheetIn' || targetType === 'sheetOut'
+  if (targetSheet) return 'sheet-out'
+  if (sourceSheet) return 'sheet-in'
+  const forward = sourceX + 18 < targetX - 18
+  return `${forward ? 'f' : 'b'}:${Math.round((sourceX + targetX) / 80) * 80}`
+}
+
+function sheetLane(
+  sourceX: number,
+  targetX: number,
+  sourceType?: string,
+  targetType?: string,
+) {
+  const sourceSheet = sourceType === 'sheetIn' || sourceType === 'sheetOut'
+  const targetSheet = targetType === 'sheetIn' || targetType === 'sheetOut'
+  if (!sourceSheet && !targetSheet) return undefined
+  if (targetSheet) return Math.round(targetX - 22)
+  return Math.round(sourceX + 22)
 }
 
 function handleCenter(
@@ -243,6 +416,22 @@ function handleCenter(
     return { x: origin.x, y: origin.y }
   }
   return { x: origin.x + handle.x + handle.width / 2, y: origin.y + handle.y + handle.height / 2 }
+}
+
+function hopPanelHandlePoint(
+  panel: InternalNode,
+  handleId: string | null | undefined,
+  type: 'source' | 'target',
+  fallbackX: number,
+  fallbackY: number,
+): Pt {
+  const bounds = panel.internals.handleBounds?.[type]
+  const handle = bounds?.find((item) => (handleId ? item.id === handleId : true))
+  if (handle) return handleCenter(panel, handleId, type)
+  if (Number.isFinite(fallbackX) && Number.isFinite(fallbackY)) {
+    return { x: fallbackX, y: fallbackY }
+  }
+  return handleCenter(panel, handleId, type)
 }
 
 function crossings(a: Pt[], b: Pt[]): Pt[] {

@@ -38,21 +38,29 @@ export function pinFromHandle(nodeId: string, handle: string): WirePin | null {
   return { nodeId, handle, side, kind }
 }
 
+function kindsMatch(a: PortKind, b: PortKind) {
+  if (a === b) return true
+  return (a === 'signal' || a === 'time') && (b === 'signal' || b === 'time')
+}
+
 export function defaultOutputPin(node: AppNode): WirePin | null {
-  const pin = pinsForNode(node).find((item) => item.side === 'out')
+  if (node.type === 'sheetIn' || node.type === 'sheetOut' || node.type === 'sheetLane' || node.type === 'note' || node.type === 'hopPanel') return null
+  const pins = pinsForNode(node).filter((item) => item.side === 'out')
+  const pin = pins.find((item) => item.kind === 'signal') ?? pins[0]
   if (!pin) return null
   return { nodeId: node.id, handle: pin.id, side: 'out', kind: pin.kind }
 }
 
 export function firstCompatiblePin(node: AppNode, pending: WirePin): WirePin | null {
+  if (node.type === 'sheetIn' || node.type === 'sheetOut' || node.type === 'sheetLane' || node.type === 'note' || node.type === 'hopPanel') return null
   const want = pending.side === 'out' ? 'in' : 'out'
-  const pin = pinsForNode(node).find((item) => item.side === want && item.kind === pending.kind)
+  const pin = pinsForNode(node).find((item) => item.side === want && kindsMatch(item.kind, pending.kind))
   if (!pin) return null
   return { nodeId: node.id, handle: pin.id, side: pin.side, kind: pin.kind }
 }
 
 export function canWire(a: WirePin, b: WirePin): boolean {
-  if (a.nodeId === b.nodeId || a.kind !== b.kind) return false
+  if (a.nodeId === b.nodeId || !kindsMatch(a.kind, b.kind)) return false
   return (a.side === 'out' && b.side === 'in') || (a.side === 'in' && b.side === 'out')
 }
 

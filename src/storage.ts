@@ -1,5 +1,6 @@
 import { BLOCKS } from './blocks'
-import { SIGNAL_PRESETS, defaultNodeData } from './catalog'
+import { defaultNodeData } from './catalog'
+import { createSistemFanPages } from './sistemfan'
 import type { AppEdge, AppNode, WorkPage } from './types'
 
 const KNOWN_TOOLS = new Set<string>(BLOCKS.map((block) => block.id))
@@ -13,47 +14,6 @@ export type StoredWorkbench = {
   watched: string[]
 }
 
-function starterNodes(pageId: string): AppNode[] {
-  return [
-    ...SIGNAL_PRESETS.map((preset) => ({
-      id: `${pageId}-${preset.id}`,
-      type: 'signal' as const,
-      position: preset.position,
-      data: defaultNodeData('signal', {
-        label: preset.label,
-        signalKind: preset.signalKind,
-        frequency: preset.frequency,
-        amplitude: preset.amplitude,
-        color: preset.color,
-      }),
-    })),
-    {
-      id: `${pageId}-time-5`,
-      type: 'time' as const,
-      position: { x: 280, y: 16 },
-      data: defaultNodeData('time', { label: 'Zaman · 5 s', windowSec: 5 }),
-    },
-    {
-      id: `${pageId}-time-10`,
-      type: 'time' as const,
-      position: { x: 280, y: 128 },
-      data: defaultNodeData('time', { label: 'Zaman · 10 s', windowSec: 10 }),
-    },
-    {
-      id: `${pageId}-ma-1`,
-      type: 'ma' as const,
-      position: { x: 280, y: 260 },
-      data: defaultNodeData('ma', { label: 'MA_1' }),
-    },
-    {
-      id: `${pageId}-out-1`,
-      type: 'display' as const,
-      position: { x: 520, y: 260 },
-      data: defaultNodeData('display', { label: 'OUT_1' }),
-    },
-  ]
-}
-
 export function emptyPage(name: string): WorkPage {
   return {
     id: `p${name}-${crypto.randomUUID().slice(0, 6)}`,
@@ -65,14 +25,17 @@ export function emptyPage(name: string): WorkPage {
 }
 
 export function defaultWorkbench(): StoredWorkbench {
-  const first = emptyPage('1')
-  first.nodes = starterNodes(first.id)
+  const pages = createSistemFanDefault()
   return {
     version: 1,
-    activePageId: first.id,
-    pages: [first],
+    activePageId: pages[0].id,
+    pages,
     watched: [],
   }
+}
+
+function createSistemFanDefault(): WorkPage[] {
+  return createSistemFanPages()
 }
 
 export function nextPageName(pages: WorkPage[]): string {
@@ -87,7 +50,7 @@ export function pruneEmptyPages(pages: WorkPage[], activePageId: string): WorkPa
   return [fallback]
 }
 
-function sanitizePage(page: WorkPage): WorkPage {
+function sanitizePage(page: WorkPage, knownNodeIds?: Set<string>): WorkPage {
   const nodes = page.nodes
     .filter((node) => node.type != null && KNOWN_TOOLS.has(node.type))
     .map((node) => ({
@@ -96,14 +59,23 @@ function sanitizePage(page: WorkPage): WorkPage {
       data: defaultNodeData(node.type ?? 'signal', node.data ?? {}),
     }))
   const ids = new Set(nodes.map((node) => node.id))
+  const known = knownNodeIds ?? ids
   return {
     ...page,
     title: typeof page.title === 'string' ? page.title : '',
+    family: typeof page.family === 'string' ? page.family : undefined,
+    section: typeof page.section === 'string' ? page.section : undefined,
     nodes,
     edges: page.edges
-      .filter((edge) => ids.has(edge.source) && ids.has(edge.target))
+      .filter((edge) => ids.has(edge.source) && known.has(edge.target))
       .map((edge) => ({ ...edge, type: 'cfc' })),
   }
+}
+
+function sanitizePages(pages: WorkPage[]): WorkPage[] {
+  const nodesOnly = pages.map((page) => sanitizePage(page))
+  const known = new Set(nodesOnly.flatMap((page) => page.nodes.map((node) => node.id)))
+  return pages.map((page) => sanitizePage(page, known))
 }
 
 export function loadWorkbench(): StoredWorkbench {
@@ -117,11 +89,12 @@ export function loadWorkbench(): StoredWorkbench {
     const activePageId = parsed.pages.some((page) => page.id === parsed.activePageId)
       ? parsed.activePageId
       : parsed.pages[0].id
-    const pages = pruneEmptyPages(parsed.pages.map(sanitizePage), activePageId)
+    const pages = pruneEmptyPages(sanitizePages(parsed.pages), activePageId)
+    const activeId = pages.some((page) => page.id === activePageId) ? activePageId : pages[0].id
     const nodeIds = new Set(pages.flatMap((page) => page.nodes.map((node) => node.id)))
     return {
       version: 1,
-      activePageId: pages.some((page) => page.id === activePageId) ? activePageId : pages[0].id,
+      activePageId: activeId,
       pages,
       watched: (parsed.watched ?? []).filter((id) => nodeIds.has(id)),
     }
@@ -135,7 +108,7 @@ export function saveWorkbench(state: StoredWorkbench) {
     STORAGE_KEY,
     JSON.stringify({
       ...state,
-      pages: pruneEmptyPages(state.pages.map(sanitizePage), state.activePageId),
+      pages: pruneEmptyPages(sanitizePages(state.pages), state.activePageId),
     }),
   )
 }

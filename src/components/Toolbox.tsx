@@ -20,6 +20,7 @@ export function Toolbox({ query, onQuery, onPick, onHide }: ToolboxProps) {
     return CATEGORIES.map((category) => ({
       ...category,
       tools: BLOCKS.filter((block) => {
+        if (block.id === 'sheetIn' || block.id === 'sheetOut' || block.id === 'sheetLane' || block.id === 'hopPanel') return false
         if (block.category !== category.id) return false
         if (!q) return true
         return `${block.label} ${block.hint} ${block.ports} ${block.fbType}`.toLocaleLowerCase('tr').includes(q)

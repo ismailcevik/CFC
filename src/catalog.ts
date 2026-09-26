@@ -1,5 +1,12 @@
 import { BLOCKS } from './blocks'
-import type { AppNodeData, SignalKind, ToolId } from './types'
+import type { AppNodeData, SignalKind, TamSayiMode, ToolId } from './types'
+
+export const TAM_SAYI_MODES: { id: TamSayiMode; label: string }[] = [
+  { id: 'round', label: 'En yakın tam sayı' },
+  { id: 'trunc', label: 'Ondalığı at (sıfıra doğru)' },
+  { id: 'floor', label: 'Aşağı yuvarla' },
+  { id: 'ceil', label: 'Yukarı yuvarla' },
+]
 
 export type ToolDef = {
   id: ToolId
@@ -45,17 +52,22 @@ export function defaultNodeData(tool: ToolId, patch: Partial<AppNodeData> = {}):
   return {
     label: def?.label ?? tool,
     signalKind: 'sine',
-    amplitude: 1,
+    amplitude: tool === 'const' ? 60 : 1,
+    offset: 0,
     frequency: 0.2,
     windowSec: 10,
     delaySec: 0,
     color: def?.color ?? '#8fb0c9',
     digitalMode: 'off',
+    tamSayiMode: 'round',
     kp: 1,
     ti: 5,
     td: 0,
-    limitMin: 0,
-    limitMax: 1,
+    limitMin: tool === 'limitler' ? 0 : 0,
+    limitMax: tool === 'limitler' ? 100 : 1,
+    ...(tool === 'oluBant' ? { amplitude: 1 } : {}),
+    normAlt: 0,
+    normUst: 100,
     hysLow: 0.3,
     hysHigh: 0.7,
     preset: 5,
@@ -63,6 +75,10 @@ export function defaultNodeData(tool: ToolId, patch: Partial<AppNodeData> = {}):
     noteText: 'Açıklama yazın',
     fontSize: 13,
     inputCount: 3,
+    busName: '',
+    remoteNodeId: '',
+    remoteHandle: '',
+    remotePageId: '',
     ...patch,
   }
 }

@@ -37,7 +37,7 @@ export function LiveChart({ nodes, watched, onUnwatch, onHide }: LiveChartProps)
   const lastPaint = useRef(0)
   const watchedNodes = watched
     .map((id) => nodes.find((node) => node.id === id))
-    .filter((node): node is AppNode => node != null && node.type !== 'note')
+    .filter((node): node is AppNode => node != null && node.type !== 'note' && node.type !== 'sheetIn' && node.type !== 'sheetOut' && node.type !== 'sheetLane' && node.type !== 'hopPanel')
   const hasSeries = watchedNodes.length > 0
 
   const lines = useMemo(
