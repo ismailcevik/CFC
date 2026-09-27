@@ -32,6 +32,15 @@ body {
   background: var(--bg);
 }
 
+.boot-screen {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  color: var(--muted);
+  text-align: center;
+}
+
 button,
 input,
 select {

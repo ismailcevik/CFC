@@ -6,6 +6,7 @@ import type { AppEdge, AppNode, WorkPage } from './types'
 const KNOWN_TOOLS = new Set<string>(BLOCKS.map((block) => block.id))
 
 export const STORAGE_KEY = 'cfc-workbench-v1'
+export const WORKBENCH_DB_ROUTE = '/api/db/workbench'
 
 export type StoredWorkbench = {
   version: 1
@@ -78,39 +79,101 @@ function sanitizePages(pages: WorkPage[]): WorkPage[] {
   return pages.map((page) => sanitizePage(page, known))
 }
 
+function normalizeStoredWorkbench(parsed: StoredWorkbench): StoredWorkbench {
+  if (parsed.version !== 1 || !Array.isArray(parsed.pages) || parsed.pages.length === 0) {
+    return defaultWorkbench()
+  }
+  const activePageId = parsed.pages.some((page) => page.id === parsed.activePageId)
+    ? parsed.activePageId
+    : parsed.pages[0].id
+  const pages = pruneEmptyPages(sanitizePages(parsed.pages), activePageId)
+  const activeId = pages.some((page) => page.id === activePageId) ? activePageId : pages[0].id
+  const nodeIds = new Set(pages.flatMap((page) => page.nodes.map((node) => node.id)))
+  return {
+    version: 1,
+    activePageId: activeId,
+    pages,
+    watched: (parsed.watched ?? []).filter((id) => nodeIds.has(id)),
+  }
+}
+
+export function parseImportedWorkbench(raw: string): StoredWorkbench {
+  const parsed = JSON.parse(raw) as StoredWorkbench
+  if (parsed.version !== 1 || !Array.isArray(parsed.pages) || parsed.pages.length === 0) {
+    throw new Error('Geçersiz veya boş proje dosyası')
+  }
+  return normalizeStoredWorkbench(parsed)
+}
+
+export function downloadWorkbenchJson(state: StoredWorkbench, filename = 'cfc-workbench.json') {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
 export function loadWorkbench(): StoredWorkbench {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return defaultWorkbench()
-    const parsed = JSON.parse(raw) as StoredWorkbench
-    if (parsed.version !== 1 || !Array.isArray(parsed.pages) || parsed.pages.length === 0) {
-      return defaultWorkbench()
-    }
-    const activePageId = parsed.pages.some((page) => page.id === parsed.activePageId)
-      ? parsed.activePageId
-      : parsed.pages[0].id
-    const pages = pruneEmptyPages(sanitizePages(parsed.pages), activePageId)
-    const activeId = pages.some((page) => page.id === activePageId) ? activePageId : pages[0].id
-    const nodeIds = new Set(pages.flatMap((page) => page.nodes.map((node) => node.id)))
-    return {
-      version: 1,
-      activePageId: activeId,
-      pages,
-      watched: (parsed.watched ?? []).filter((id) => nodeIds.has(id)),
-    }
+    return normalizeStoredWorkbench(JSON.parse(raw) as StoredWorkbench)
   } catch {
     return defaultWorkbench()
   }
 }
 
-export function saveWorkbench(state: StoredWorkbench) {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({
-      ...state,
-      pages: pruneEmptyPages(sanitizePages(state.pages), state.activePageId),
-    }),
-  )
+export function prepareWorkbenchSnapshot(state: StoredWorkbench): StoredWorkbench {
+  return {
+    ...state,
+    pages: pruneEmptyPages(sanitizePages(state.pages), state.activePageId),
+  }
+}
+
+export function saveWorkbench(state: StoredWorkbench): StoredWorkbench {
+  const prepared = prepareWorkbenchSnapshot(state)
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(prepared))
+  return prepared
+}
+
+export async function loadWorkbenchFromDb(): Promise<StoredWorkbench | null> {
+  try {
+    const response = await fetch(WORKBENCH_DB_ROUTE)
+    if (response.status === 404) return null
+    if (!response.ok) return null
+    const parsed = (await response.json()) as StoredWorkbench | null
+    if (!parsed) return null
+    return normalizeStoredWorkbench(parsed)
+  } catch {
+    return null
+  }
+}
+
+export async function saveWorkbenchToDb(state: StoredWorkbench): Promise<boolean> {
+  const prepared = prepareWorkbenchSnapshot(state)
+  try {
+    const response = await fetch(WORKBENCH_DB_ROUTE, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(prepared, null, 2),
+    })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
+export async function bootWorkbenchFromDb(): Promise<StoredWorkbench> {
+  const fromDb = await loadWorkbenchFromDb()
+  if (fromDb) {
+    saveWorkbench(fromDb)
+    return fromDb
+  }
+  const local = loadWorkbench()
+  await saveWorkbenchToDb(local)
+  return local
 }
 
 export function mergeActivePage(

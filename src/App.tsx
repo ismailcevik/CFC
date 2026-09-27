@@ -24,12 +24,15 @@ import { nodeTypes } from './nodes'
 import { samePortKind } from './ports'
 import { RuntimeContext, WatchContext } from './runtime'
 import {
+  bootWorkbenchFromDb,
+  downloadWorkbenchJson,
   emptyPage,
-  loadWorkbench,
   mergeActivePage,
   nextPageName,
+  parseImportedWorkbench,
   pruneEmptyPages,
   saveWorkbench,
+  saveWorkbenchToDb,
   type StoredWorkbench,
 } from './storage'
 import {
@@ -80,13 +83,11 @@ import { SAMPLE_DT } from './types'
 import '@xyflow/react/dist/style.css'
 
 const SIGNAL_COLORS = ['#4ea1ff', '#38bdf8', '#818cf8', '#22d3ee', '#a78bfa', '#fb7185']
-function bootWorkbench() {
-  const loaded = loadWorkbench()
+
+function prepareInitialWorkbench(loaded: StoredWorkbench): StoredWorkbench {
   const pages = syncHopPanels(syncSheetLists(loaded.pages))
   return { ...loaded, pages }
 }
-
-const saved = bootWorkbench()
 
 function createNode(
   tool: ToolId,
@@ -113,17 +114,24 @@ function createNode(
   }
 }
 
-function Workbench() {
+type WorkbenchProps = { initial: StoredWorkbench }
+
+function Workbench({ initial }: WorkbenchProps) {
+  const booted = useMemo(() => prepareInitialWorkbench(initial), [initial])
   const { screenToFlowPosition, fitView, setViewport } = useReactFlow()
-  const [pages, setPages] = useState<WorkPage[]>(saved.pages)
-  const [activePageId, setActivePageId] = useState(saved.activePageId)
+  const [pages, setPages] = useState<WorkPage[]>(booted.pages)
+  const [activePageId, setActivePageId] = useState(booted.activePageId)
   const activePage = pages.find((page) => page.id === activePageId) ?? pages[0]
-  const [nodes, setNodes, onNodesChange] = useNodesState(activePage.nodes)
-  const [edges, setEdges, onEdgesChange] = useEdgesState(activePage.edges)
+  const initialActive = useMemo(
+    () => booted.pages.find((page) => page.id === booted.activePageId) ?? booted.pages[0],
+    [booted.activePageId, booted.pages],
+  )
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialActive.nodes)
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialActive.edges)
   const [query, setQuery] = useState('')
   const [showTools, setShowTools] = useState(false)
   const [showChart, setShowChart] = useState(false)
-  const [watched, setWatched] = useState<string[]>(saved.watched)
+  const [watched, setWatched] = useState<string[]>(booted.watched)
   const [clock, setClock] = useState(0)
   const [values, setValues] = useState<Record<string, number | null>>({})
   const [series, setSeries] = useState<Record<string, Sample[]>>({})
@@ -187,16 +195,16 @@ function Workbench() {
     }
   }, [activePageId, edges, nodes, pages, watched])
 
-  const persistWorkbench = useCallback(
-    (snapshot: StoredWorkbench) => {
-      saveWorkbench(snapshot)
-    },
-    [],
-  )
+  const persistWorkbench = useCallback((snapshot: StoredWorkbench) => {
+    const prepared = saveWorkbench(snapshot)
+    void saveWorkbenchToDb(prepared)
+    return prepared
+  }, [])
 
-  const saveProject = useCallback(() => {
-    persistWorkbench(workbenchSnapshot())
-    setSaveHint('Kaydedildi')
+  const saveProject = useCallback(async () => {
+    const prepared = persistWorkbench(workbenchSnapshot())
+    const ok = await saveWorkbenchToDb(prepared)
+    setSaveHint(ok ? 'db kaydedildi' : 'Kaydedildi (db yazılamadı)')
     window.setTimeout(() => setSaveHint(null), 2200)
   }, [persistWorkbench, workbenchSnapshot])
 
@@ -1043,9 +1051,42 @@ function Workbench() {
 }
 
 export default function App() {
+  const [initial, setInitial] = useState<StoredWorkbench | null>(null)
+  const [bootError, setBootError] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    bootWorkbenchFromDb()
+      .then((workbench) => {
+        if (!cancelled) setInitial(prepareInitialWorkbench(workbench))
+      })
+      .catch(() => {
+        if (!cancelled) setBootError(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  if (bootError) {
+    return (
+      <div className="boot-screen">
+        <p>Proje veritabanı okunamadı. Geliştirme sunucusunu yeniden başlatın.</p>
+      </div>
+    )
+  }
+
+  if (!initial) {
+    return (
+      <div className="boot-screen">
+        <p>Çizimler yükleniyor…</p>
+      </div>
+    )
+  }
+
   return (
     <ReactFlowProvider>
-      <Workbench />
+      <Workbench initial={initial} />
     </ReactFlowProvider>
   )
 }
