@@ -295,6 +295,22 @@ export function hasSistemFanSet(pages: WorkPage[]): boolean {
   return SECTIONS.every((item) => sections.has(item.section))
 }
 
+/** İlk sürüm demo sayfası (Sinyal A…D); bozuk db yedeği. */
+export function hasLegacyDemoPages(pages: WorkPage[]): boolean {
+  return pages.some((page) =>
+    page.nodes.some(
+      (node) =>
+        /-(sig-[a-d])($|-)/.test(node.id) ||
+        /-(time-5|time-10)$/.test(node.id) ||
+        String(node.data?.label ?? '').startsWith('Sinyal A ·'),
+    ),
+  )
+}
+
+export function isAuthoritativeSistemFanWorkbench(pages: WorkPage[]): boolean {
+  return hasSistemFanSet(pages) && !hasLegacyDemoPages(pages)
+}
+
 function hasLegacyConnectors(pages: WorkPage[]) {
   return pages.some((page) =>
     page.nodes.some(

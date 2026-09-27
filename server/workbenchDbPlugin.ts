@@ -29,6 +29,7 @@ function attachWorkbenchDbMiddleware(dbDir: string, filePath: string): Connect.N
           const raw = await fs.readFile(filePath, 'utf8')
           res.statusCode = 200
           res.setHeader('Content-Type', 'application/json; charset=utf-8')
+          res.setHeader('Cache-Control', 'no-store')
           res.end(raw)
         } catch (error) {
           const code = (error as NodeJS.ErrnoException).code

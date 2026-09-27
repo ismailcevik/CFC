@@ -30,8 +30,8 @@ import {
   mergeActivePage,
   nextPageName,
   parseImportedWorkbench,
+  prepareWorkbenchSnapshot,
   pruneEmptyPages,
-  saveWorkbench,
   saveWorkbenchToDb,
   type StoredWorkbench,
 } from './storage'
@@ -139,7 +139,6 @@ function Workbench({ initial }: WorkbenchProps) {
   const stateRef = useRef<Record<string, NodeRuntime>>({})
   const timeRef = useRef(0)
   const graphRef = useRef({ nodes, edges, pages, activePageId, watched })
-  const saveTimerRef = useRef<number | null>(null)
   const clipboardRef = useRef<{ nodes: AppNode[]; edges: AppEdge[] } | null>(null)
   const [pendingWire, setPendingWire] = useState<WirePin | null>(null)
   const [inspectedId, setInspectedId] = useState<string | null>(null)
@@ -196,7 +195,7 @@ function Workbench({ initial }: WorkbenchProps) {
   }, [activePageId, edges, nodes, pages, watched])
 
   const persistWorkbench = useCallback((snapshot: StoredWorkbench) => {
-    const prepared = saveWorkbench(snapshot)
+    const prepared = prepareWorkbenchSnapshot(snapshot)
     void saveWorkbenchToDb(prepared)
     return prepared
   }, [])
@@ -207,34 +206,6 @@ function Workbench({ initial }: WorkbenchProps) {
     setSaveHint(ok ? 'db kaydedildi' : 'Kaydedildi (db yazılamadı)')
     window.setTimeout(() => setSaveHint(null), 2200)
   }, [persistWorkbench, workbenchSnapshot])
-
-  useEffect(() => {
-    if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current)
-    saveTimerRef.current = window.setTimeout(() => {
-      persistWorkbench(workbenchSnapshot())
-      saveTimerRef.current = null
-    }, 450)
-    return () => {
-      if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current)
-    }
-  }, [persistWorkbench, workbenchSnapshot])
-
-  useEffect(() => {
-    const flush = () => {
-      const latest = graphRef.current
-      persistWorkbench({
-        version: 1,
-        activePageId: latest.activePageId,
-        pages: pruneEmptyPages(
-          mergeActivePage(latest.pages, latest.activePageId, latest.nodes, latest.edges),
-          latest.activePageId,
-        ),
-        watched: latest.watched,
-      })
-    }
-    window.addEventListener('beforeunload', flush)
-    return () => window.removeEventListener('beforeunload', flush)
-  }, [persistWorkbench])
 
   useEffect(() => {
     const timer = window.setInterval(() => {

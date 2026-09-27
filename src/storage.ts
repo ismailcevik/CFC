@@ -1,12 +1,44 @@
 import { BLOCKS } from './blocks'
 import { defaultNodeData } from './catalog'
-import { createSistemFanPages } from './sistemfan'
+import { createSistemFanPages, hasLegacyDemoPages } from './sistemfan'
 import type { AppEdge, AppNode, WorkPage } from './types'
 
 const KNOWN_TOOLS = new Set<string>(BLOCKS.map((block) => block.id))
 
-export const STORAGE_KEY = 'cfc-workbench-v1'
 export const WORKBENCH_DB_ROUTE = '/api/db/workbench'
+
+const LEGACY_STORAGE_PREFIX = 'cfc-workbench-'
+
+/** Eski sürümlerde kalan tarayıcı önbelleğini temizler; artık yazılmaz. */
+export function purgeBrowserWorkbenchCache() {
+  try {
+    const keys: string[] = []
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i)
+      if (key?.startsWith(LEGACY_STORAGE_PREFIX)) keys.push(key)
+    }
+    for (const key of keys) localStorage.removeItem(key)
+  } catch {
+    /* private mode / disabled storage */
+  }
+}
+
+/** Boş tek sayfa — db sıfırdan çizim için. */
+export function blankWorkbench(): StoredWorkbench {
+  const page: WorkPage = {
+    id: 'page-1',
+    name: '1',
+    title: '',
+    nodes: [],
+    edges: [],
+  }
+  return {
+    version: 1,
+    activePageId: page.id,
+    pages: [page],
+    watched: [],
+  }
+}
 
 export type StoredWorkbench = {
   version: 1
@@ -81,7 +113,7 @@ function sanitizePages(pages: WorkPage[]): WorkPage[] {
 
 function normalizeStoredWorkbench(parsed: StoredWorkbench): StoredWorkbench {
   if (parsed.version !== 1 || !Array.isArray(parsed.pages) || parsed.pages.length === 0) {
-    return defaultWorkbench()
+    return blankWorkbench()
   }
   const activePageId = parsed.pages.some((page) => page.id === parsed.activePageId)
     ? parsed.activePageId
@@ -115,16 +147,6 @@ export function downloadWorkbenchJson(state: StoredWorkbench, filename = 'cfc-wo
   URL.revokeObjectURL(url)
 }
 
-export function loadWorkbench(): StoredWorkbench {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return defaultWorkbench()
-    return normalizeStoredWorkbench(JSON.parse(raw) as StoredWorkbench)
-  } catch {
-    return defaultWorkbench()
-  }
-}
-
 export function prepareWorkbenchSnapshot(state: StoredWorkbench): StoredWorkbench {
   return {
     ...state,
@@ -132,15 +154,9 @@ export function prepareWorkbenchSnapshot(state: StoredWorkbench): StoredWorkbenc
   }
 }
 
-export function saveWorkbench(state: StoredWorkbench): StoredWorkbench {
-  const prepared = prepareWorkbenchSnapshot(state)
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(prepared))
-  return prepared
-}
-
 export async function loadWorkbenchFromDb(): Promise<StoredWorkbench | null> {
   try {
-    const response = await fetch(WORKBENCH_DB_ROUTE)
+    const response = await fetch(WORKBENCH_DB_ROUTE, { cache: 'no-store' })
     if (response.status === 404) return null
     if (!response.ok) return null
     const parsed = (await response.json()) as StoredWorkbench | null
@@ -165,15 +181,39 @@ export async function saveWorkbenchToDb(state: StoredWorkbench): Promise<boolean
   }
 }
 
-export async function bootWorkbenchFromDb(): Promise<StoredWorkbench> {
+async function resolveAuthoritativeWorkbench(): Promise<StoredWorkbench> {
   const fromDb = await loadWorkbenchFromDb()
   if (fromDb) {
-    saveWorkbench(fromDb)
+    if (hasLegacyDemoPages(fromDb.pages)) {
+      const blank = blankWorkbench()
+      await saveWorkbenchToDb(blank)
+      return blank
+    }
     return fromDb
   }
-  const local = loadWorkbench()
-  await saveWorkbenchToDb(local)
-  return local
+  const blank = blankWorkbench()
+  await saveWorkbenchToDb(blank)
+  return blank
+}
+
+export async function bootWorkbenchFromDb(): Promise<StoredWorkbench> {
+  purgeBrowserWorkbenchCache()
+  return resolveAuthoritativeWorkbench()
+}
+
+/** db/workbench.json dosyasını boş projeyle değiştir. */
+export async function clearDbWorkbench(): Promise<StoredWorkbench> {
+  const blank = blankWorkbench()
+  await saveWorkbenchToDb(blank)
+  return blank
+}
+
+/** db/workbench.json (API) kaynağını yeniden oku (diske yazmaz). */
+export async function forceReloadWorkbenchFromDb(): Promise<StoredWorkbench> {
+  purgeBrowserWorkbenchCache()
+  const fromDb = await loadWorkbenchFromDb()
+  if (fromDb) return fromDb
+  return blankWorkbench()
 }
 
 export function mergeActivePage(
