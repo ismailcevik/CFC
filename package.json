@@ -2,12 +2,15 @@
   "name": "cfc",
   "private": true,
   "scripts": {
-    "dev": "npm run dev --prefix frontend",
+    "dev": "concurrently -k -n api,web -c green,blue \"npm run server\" \"npm run dev --prefix frontend\"",
     "build": "npm run build --prefix frontend",
     "lint": "npm run lint --prefix frontend",
     "server": "cd backend && go run ./cmd/cfc-server -data-dir ../db",
     "start": "cd backend && go run ./cmd/cfc-server -data-dir ../db -dist ../frontend/dist -open",
     "release:win": "npm run build && mkdir -p release && cp -R frontend/dist release/dist && cd backend && GOOS=windows GOARCH=amd64 go build -ldflags=\"-s -w\" -o ../release/CFC.exe ./cmd/cfc-server",
     "release:mac": "npm run build && mkdir -p release && cp -R frontend/dist release/dist && cd backend && go build -ldflags=\"-s -w\" -o ../release/CFC ./cmd/cfc-server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
   }
 }

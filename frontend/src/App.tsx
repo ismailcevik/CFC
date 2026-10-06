@@ -1040,7 +1040,10 @@ export default function App() {
   if (bootError) {
     return (
       <div className="boot-screen">
-        <p>Proje veritabanı okunamadı. Geliştirme sunucusunu yeniden başlatın.</p>
+        <p>
+          Go API’ye bağlanılamadı (127.0.0.1:8787). Proje kökünde{' '}
+          <code>npm run server</code> çalıştırın veya tek komut için <code>npm run dev</code> kullanın.
+        </p>
       </div>
     )
   }

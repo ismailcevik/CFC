@@ -12,10 +12,11 @@ release/    müşteri paketi (build sonrası)
 ## Geliştirme
 
 ```bash
-npm install --prefix frontend
-npm run server    # terminal 1 — Go API :8787
-npm run dev       # terminal 2 — React :5173
+npm install
+npm run dev       # Go API :8787 + React :5173 (tek komut)
 ```
+
+İstersen ayrı terminaller: `npm run server` ve `npm run dev --prefix frontend`.
 
 ## Müşteriye verilecek paket (Windows)
 

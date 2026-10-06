@@ -160,17 +160,25 @@ export function prepareWorkbenchSnapshot(state: StoredWorkbench): StoredWorkbenc
   }
 }
 
-export async function loadWorkbenchFromDb(): Promise<StoredWorkbench | null> {
-  try {
-    const response = await fetch(workbenchDbUrl(), { cache: 'no-store' })
-    if (response.status === 404) return null
-    if (!response.ok) return null
-    const parsed = (await response.json()) as StoredWorkbench | null
-    if (!parsed) return null
-    return normalizeStoredWorkbench(parsed)
-  } catch {
-    return null
+export class WorkbenchDbUnavailableError extends Error {
+  constructor() {
+    super('Go API unreachable')
+    this.name = 'WorkbenchDbUnavailableError'
   }
+}
+
+export async function loadWorkbenchFromDb(): Promise<StoredWorkbench | null> {
+  let response: Response
+  try {
+    response = await fetch(workbenchDbUrl(), { cache: 'no-store' })
+  } catch {
+    throw new WorkbenchDbUnavailableError()
+  }
+  if (response.status === 404) return null
+  if (!response.ok) throw new WorkbenchDbUnavailableError()
+  const parsed = (await response.json()) as StoredWorkbench | null
+  if (!parsed) return null
+  return normalizeStoredWorkbench(parsed)
 }
 
 export async function saveWorkbenchToDb(state: StoredWorkbench): Promise<boolean> {
@@ -198,7 +206,8 @@ async function resolveAuthoritativeWorkbench(): Promise<StoredWorkbench> {
     return fromDb
   }
   const blank = blankWorkbench()
-  await saveWorkbenchToDb(blank)
+  const saved = await saveWorkbenchToDb(blank)
+  if (!saved) throw new WorkbenchDbUnavailableError()
   return blank
 }
 
