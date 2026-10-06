@@ -671,15 +671,14 @@ export function maWindowInfo(
 ) {
   const maNode = nodes.find((node) => node.id === maId)
   const timeEdge = edges.find((edge) => edge.target === maId && edge.targetHandle === PORT.timeIn)
-  const delayEdge = edges.find(
-    (edge) => edge.target === maId && (edge.targetHandle ?? '') === PORT.timeIn2,
-  )
+  edges.find((edge) => edge.target === maId && (edge.targetHandle ?? '') === PORT.timeIn2)
   const signalEdge = edges.find((edge) => edge.target === maId && edge.targetHandle === PORT.signalIn)
+  const wiredNodes = nodes as Parameters<typeof resolveWiredNumeric>[1]
   const windowSec = maNode
-    ? resolveWiredNumeric(values, nodes, edges, maId, PORT.timeIn, maNode.data.windowSec)
+    ? resolveWiredNumeric(values, wiredNodes, edges, maId, PORT.timeIn, maNode.data.windowSec)
     : 10
   const delaySec = maNode
-    ? resolveWiredNumeric(values, nodes, edges, maId, PORT.timeIn2, maNode.data.delaySec ?? 0)
+    ? resolveWiredNumeric(values, wiredNodes, edges, maId, PORT.timeIn2, maNode.data.delaySec ?? 0)
     : 0
   const bounds = maBounds(t, windowSec, delaySec)
   const count = signalEdge ? windowCount(series[signalEdge.source] ?? [], t, windowSec, delaySec) : 0

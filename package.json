@@ -1,27 +1,13 @@
 {
-  "name": "crm",
+  "name": "cfc",
   "private": true,
-  "version": "0.0.0",
-  "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "lint": "oxlint",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "@xyflow/react": "^12.11.6",
-    "echarts": "^6.1.0",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8"
-  },
-  "devDependencies": {
-    "@types/node": "^24.13.3",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.7",
-    "@vitejs/plugin-react": "^6.1.1",
-    "oxlint": "^1.81.0",
-    "typescript": "~6.0.2",
-    "vite": "^8.3.0"
+    "dev": "npm run dev --prefix frontend",
+    "build": "npm run build --prefix frontend",
+    "lint": "npm run lint --prefix frontend",
+    "server": "cd backend && go run ./cmd/cfc-server -data-dir ../db",
+    "start": "cd backend && go run ./cmd/cfc-server -data-dir ../db -dist ../frontend/dist -open",
+    "release:win": "npm run build && mkdir -p release && cp -R frontend/dist release/dist && cd backend && GOOS=windows GOARCH=amd64 go build -ldflags=\"-s -w\" -o ../release/CFC.exe ./cmd/cfc-server",
+    "release:mac": "npm run build && mkdir -p release && cp -R frontend/dist release/dist && cd backend && go build -ldflags=\"-s -w\" -o ../release/CFC ./cmd/cfc-server"
   }
 }

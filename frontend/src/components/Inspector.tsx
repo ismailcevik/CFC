@@ -156,7 +156,7 @@ export function Inspector({ node, nodes, edges, onChange, onHide }: InspectorPro
               value={formatValue(
                 livePinValue(
                   runtime.values,
-                  edges.find((edge) => edge.target === node.id && edge.targetHandle === PORT.signalIn)?.source,
+                  edges.find((edge) => edge.target === node.id && edge.targetHandle === PORT.signalIn)?.source ?? '',
                   edges.find((edge) => edge.target === node.id && edge.targetHandle === PORT.signalIn)?.sourceHandle,
                 ),
               )}
@@ -235,7 +235,7 @@ export function Inspector({ node, nodes, edges, onChange, onHide }: InspectorPro
               value={formatValue(
                 livePinValue(
                   runtime.values,
-                  edges.find((edge) => edge.target === node.id && edge.targetHandle === PORT.signalIn)?.source,
+                  edges.find((edge) => edge.target === node.id && edge.targetHandle === PORT.signalIn)?.source ?? '',
                   edges.find((edge) => edge.target === node.id && edge.targetHandle === PORT.signalIn)?.sourceHandle,
                 ),
               )}
@@ -245,7 +245,7 @@ export function Inspector({ node, nodes, edges, onChange, onHide }: InspectorPro
               value={formatValue(
                 livePinValue(
                   runtime.values,
-                  edges.find((edge) => edge.target === node.id && edge.targetHandle === PORT.signalIn2)?.source,
+                  edges.find((edge) => edge.target === node.id && edge.targetHandle === PORT.signalIn2)?.source ?? '',
                   edges.find((edge) => edge.target === node.id && edge.targetHandle === PORT.signalIn2)?.sourceHandle,
                 ),
               )}
@@ -494,14 +494,13 @@ function InterlockDetails({
 function Num({
   label,
   value,
-  step,
   min,
   max,
   onChange,
 }: {
   label: string
   value: number
-  step: number
+  step?: number
   min?: number
   max?: number
   onChange: (value: number) => void

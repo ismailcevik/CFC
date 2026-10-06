@@ -34,6 +34,7 @@ export function filterHopPanelSelection(nodes: AppNode[], changes: NodeChange<Ap
     nodes.filter((node) => node.selected && !isHopPanel(node)).map((node) => node.id),
   )
   for (const change of selectOn) {
+    if (change.type !== 'select') continue
     const node = nodes.find((item) => item.id === change.id)
     if (node && !isHopPanel(node)) selectedBlocks.add(node.id)
   }

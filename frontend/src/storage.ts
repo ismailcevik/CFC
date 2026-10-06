@@ -7,6 +7,12 @@ const KNOWN_TOOLS = new Set<string>(BLOCKS.map((block) => block.id))
 
 export const WORKBENCH_DB_ROUTE = '/api/db/workbench'
 
+const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '')
+
+export function workbenchDbUrl(): string {
+  return `${API_BASE}${WORKBENCH_DB_ROUTE}`
+}
+
 const LEGACY_STORAGE_PREFIX = 'cfc-workbench-'
 
 /** Eski sürümlerde kalan tarayıcı önbelleğini temizler; artık yazılmaz. */
@@ -156,7 +162,7 @@ export function prepareWorkbenchSnapshot(state: StoredWorkbench): StoredWorkbenc
 
 export async function loadWorkbenchFromDb(): Promise<StoredWorkbench | null> {
   try {
-    const response = await fetch(WORKBENCH_DB_ROUTE, { cache: 'no-store' })
+    const response = await fetch(workbenchDbUrl(), { cache: 'no-store' })
     if (response.status === 404) return null
     if (!response.ok) return null
     const parsed = (await response.json()) as StoredWorkbench | null
@@ -170,7 +176,7 @@ export async function loadWorkbenchFromDb(): Promise<StoredWorkbench | null> {
 export async function saveWorkbenchToDb(state: StoredWorkbench): Promise<boolean> {
   const prepared = prepareWorkbenchSnapshot(state)
   try {
-    const response = await fetch(WORKBENCH_DB_ROUTE, {
+    const response = await fetch(workbenchDbUrl(), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(prepared, null, 2),

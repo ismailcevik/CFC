@@ -244,7 +244,7 @@ function CfcBlock({
   )
 }
 
-function useLockPins(id: string, version?: number) {
+function useLockPins(id: string, version?: string | number) {
   const update = useUpdateNodeInternals()
   useEffect(() => {
     update(id)
@@ -362,7 +362,7 @@ function GenericNode({ id, data, selected, type }: NodeProps<AppNode>) {
               ? signalKind
               : undefined
       }
-      pinFallbackLive={pinFallback}
+      pinFallbackLive={pinFallback as Record<string, number> | undefined}
       status={
         type === 'limit' ||
         type === 'norm' ||

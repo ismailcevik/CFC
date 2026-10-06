@@ -321,7 +321,7 @@ function hasLegacyConnectors(pages: WorkPage[]) {
         node.id.startsWith('sf-const-off-') ||
         node.id === 'sf-const-dongu' ||
         node.id === 'sf-trig-dongu' ||
-        node.type === 'trig' ||
+        String(node.type) === 'trig' ||
         node.id.startsWith('sf-ma-prev-'),
     ) ||
       page.edges.some((edge) => edge.sourceHandle === PORT.timeOut),

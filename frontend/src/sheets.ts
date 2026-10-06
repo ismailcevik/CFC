@@ -1,9 +1,6 @@
 import { blockById, pinsForNode } from './blocks'
-import { defaultNodeData } from './catalog'
-import { CFC, SHEET, cfcBlockHeight, cfcPinTop } from './cfc'
-import { PORT } from './ports'
-import { portKindOf } from './ports'
-import type { AppEdge, AppNode, PortKind, WorkPage } from './types'
+import { CFC, SHEET } from './cfc'
+import type { AppEdge, AppNode, WorkPage } from './types'
 import { isHopPanel } from './hops'
 import { pageOfNode } from './xref'
 
@@ -11,7 +8,6 @@ const LIST_W = SHEET.width
 const ROW = SHEET.height + 16
 const GUTTER = 48
 const PAGE_LEFT = 24
-const PAGE_TOP = 72
 const LANE_INSET = 14
 const LANE_HEADER = 40
 const SHEET_GAP = 16
@@ -94,119 +90,6 @@ export function separateSheetY(desiredY: number, laneY: number, siblings: AppNod
     if (y < minY) y = hit.position.y + SHEET.height + SHEET_GAP
     y = Math.round(y / 4) * 4
   }
-  return y
-}
-
-function laneHeight(laneY: number, sheets: AppNode[]) {
-  if (sheets.length === 0) return 480
-  return Math.max(480, ...sheets.map((node) => node.position.y + SHEET.height + 16 - laneY))
-}
-
-function workSize(node: AppNode) {
-  if (node.type === 'note') return { w: 220, h: 96 }
-  const pins = pinsForNode(node)
-  const rows = Math.max(1, ...pins.map((pin) => pin.row + 1))
-  return { w: CFC.width, h: cfcBlockHeight(rows) }
-}
-
-function boxesOverlap(
-  a: { x: number; y: number; w: number; h: number },
-  b: { x: number; y: number; w: number; h: number },
-  gap: number,
-) {
-  return a.x < b.x + b.w + gap && a.x + a.w + gap > b.x && a.y < b.y + b.h + gap && a.y + a.h + gap > b.y
-}
-
-function unoverlapWork(nodes: AppNode[]): AppNode[] {
-  const work = nodes.filter((node) => !isSheetChrome(node))
-  const positions = new Map(work.map((node) => [node.id, { ...node.position }]))
-  const sorted = [...work].sort((a, b) => {
-    const ap = positions.get(a.id)!
-    const bp = positions.get(b.id)!
-    return ap.y - bp.y || ap.x - bp.x
-  })
-  for (let i = 0; i < sorted.length; i += 1) {
-    const node = sorted[i]
-    const size = workSize(node)
-    let pos = positions.get(node.id)!
-    for (let guard = 0; guard < 40; guard += 1) {
-      const box = { x: pos.x, y: pos.y, w: size.w, h: size.h }
-      const hit = sorted.slice(0, i).find((other) => {
-        const op = positions.get(other.id)!
-        const os = workSize(other)
-        return boxesOverlap(box, { x: op.x, y: op.y, w: os.w, h: os.h }, 12)
-      })
-      if (!hit) break
-      const hp = positions.get(hit.id)!
-      const hs = workSize(hit)
-      pos = { x: pos.x, y: Math.round((hp.y + hs.h + 12) / 4) * 4 }
-    }
-    positions.set(node.id, pos)
-  }
-  return nodes.map((node) => {
-    const next = positions.get(node.id)
-    if (!next || (next.x === node.position.x && next.y === node.position.y)) return node
-    return { ...node, position: next }
-  })
-}
-
-function nudgeOffChrome(node: AppNode, chrome: AppNode[]) {
-  const { w: width, h: height } = workSize(node)
-  const overlaps = (x: number, y: number) =>
-    chrome.some((item) => {
-      const boxW = item.type === 'sheetLane' ? LIST_W + 28 : SHEET.width
-      const boxH = item.type === 'sheetLane' ? Number(item.style?.height) || 480 : SHEET.height
-      return (
-        x < item.position.x + boxW + 16 &&
-        x + width + 16 > item.position.x &&
-        y < item.position.y + boxH + 16 &&
-        y + height + 16 > item.position.y
-      )
-    })
-  if (!overlaps(node.position.x, node.position.y)) return node
-  const startX = node.position.x
-  for (let dx = 20; dx <= 800; dx += 20) {
-    if (!overlaps(startX + dx, node.position.y)) {
-      return { ...node, position: { ...node.position, x: startX + dx } }
-    }
-    if (!overlaps(startX - dx, node.position.y)) {
-      return { ...node, position: { ...node.position, x: startX - dx } }
-    }
-  }
-  return node
-}
-
-function kindPorts(kind: PortKind) {
-  if (kind === 'time') return { out: PORT.timeOut, in: PORT.timeIn }
-  if (kind === 'bool') return { out: PORT.boolOut, in: PORT.boolIn }
-  return { out: PORT.signalOut, in: PORT.signalIn }
-}
-
-function token(parts: string[]) {
-  return parts.join('_').replace(/[^a-zA-Z0-9._-]/g, '-')
-}
-
-function groupBy<T>(items: T[], keyOf: (item: T) => string): T[][] {
-  const groups = new Map<string, T[]>()
-  for (const item of items) {
-    const key = keyOf(item)
-    const list = groups.get(key) ?? []
-    list.push(item)
-    groups.set(key, list)
-  }
-  return [...groups.values()]
-}
-
-function connectedPinY(node: AppNode, handle: string | undefined, side: 'in' | 'out') {
-  const pins = pinsForNode(node)
-  const pin = pins.find((item) => item.id === handle) ?? pins.find((item) => item.side === side)
-  return node.position.y + cfcPinTop(pin?.row ?? 0)
-}
-
-function takeSlot(preferred: number, used: number[], minY = PAGE_TOP) {
-  let y = Math.max(minY, Math.round(preferred / 4) * 4)
-  while (used.some((slot) => Math.abs(slot - y) < SHEET.height + SHEET_GAP)) y += SHEET.height + SHEET_GAP
-  used.push(y)
   return y
 }
 
